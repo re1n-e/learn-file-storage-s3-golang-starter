@@ -3,10 +3,10 @@ package main
 import (
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
@@ -35,8 +35,6 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
 
-	// TODO: implement the upload here
-
 	const maxMemory = 10 << 20
 	if err := r.ParseMultipartForm(maxMemory); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to set max memory for multipart", err)
@@ -50,13 +48,26 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 	defer file.Close()
 
-	mediaType := header.Header.Get("Content-Type")
-	if mediaType == "" {
-		respondWithError(w, http.StatusNotFound, "No content-type found", nil)
+	mediaTypeHeader := header.Header.Get("Content-Type")
+	if mediaTypeHeader == "" {
+		respondWithError(w, http.StatusBadRequest, "No Content-Type found", nil)
 		return
 	}
-	type_extension := strings.Split(mediaType, "/")
-	fileExtension := type_extension[len(type_extension)-1]
+
+	mediaType, _, err := mime.ParseMediaType(mediaTypeHeader)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid Content-Type", err)
+		return
+	}
+
+	extensions, err := mime.ExtensionsByType(mediaType)
+	if err != nil || len(extensions) == 0 {
+		respondWithError(w, http.StatusBadRequest, "Unsupported media type", nil)
+		return
+	}
+
+	fileExtension := extensions[0] 
+
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to retrive video", err)
